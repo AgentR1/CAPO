@@ -41,4 +41,10 @@ fi
 
 GUNICORN_ARGS+=(--log-level "${WEBSHOP_ENV_LOG_LEVEL:-info}")
 
+echo "Starting WebShop env server with:"
+echo "  WEBSHOP_DATASET_MODE=${WEBSHOP_DATASET_MODE}"
+echo "  WEBSHOP_DATA_DIR=${WEBSHOP_DATA_DIR}"
+echo "  WEBSHOP_INDEX_DIR=${WEBSHOP_INDEX_DIR}"
+echo "  WEBSHOP_SEARCH_TOP_K=${WEBSHOP_SEARCH_TOP_K}"
+
 exec gunicorn "${GUNICORN_ARGS[@]}"

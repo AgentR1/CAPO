@@ -1,3 +1,4 @@
-# HotpotQA FAISS search tool (recipe/hotpotqa/utils.py)
+# HotpotQA FAISS search tool + BGE embeddings (recipe/hotpotqa/utils.py)
 faiss-cpu>=1.7.4
 FlagEmbedding>=1.2.0
+# Data prep (recipe/hotpotqa/prepare_hotpotqa_arft.py): datasets, pyarrow, pandas

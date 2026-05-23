@@ -11,27 +11,59 @@ import torch
 from FlagEmbedding import FlagAutoModel
 import numpy as np
 
-# 数据目录：默认 /root/data；Docker 或本地可通过环境变量 HOTPOTQA_DATA_ROOT 覆盖（需与建索引时一致）
-HOTPOTQA_DATA_ROOT = Path(os.environ.get("HOTPOTQA_DATA_ROOT", "/root/data")).expanduser().resolve()
-HOTPOTQA_INDEX_BIN = HOTPOTQA_DATA_ROOT / "index.bin"
-# 检索结果展示用段落文本；需与建索引时的 hpqa_corpus.jsonl 一致
-HOTPOTQA_CORPUS_JSONL = HOTPOTQA_DATA_ROOT / "hpqa_corpus.jsonl"
-# hpqa_corpus.npy 仅 process_hotpotqa 建库时使用，运行时不需要加载
+# Retrieval corpus root: defaults to <repo>/data/corpus/hotpotqa_corpus
+# (index.bin + hpqa_corpus.jsonl). Override with HOTPOTQA_CORPUS_DATA_ROOT.
+_STEPPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_HOTPOTQA_CORPUS_DATA_ROOT = _STEPPO_ROOT / "data" / "corpus" / "hotpotqa_corpus"
+
+
+def resolve_hotpotqa_corpus_data_root(corpus_data_dir: Optional[str] = None) -> Path:
+    """Resolve the directory that stores HotpotQA retrieval files.
+
+    Args:
+        corpus_data_dir: Optional explicit directory from recipe YAML.
+
+    Returns:
+        Absolute path containing ``index.bin`` and ``hpqa_corpus.jsonl``.
+    """
+    raw = (
+        corpus_data_dir
+        or os.environ.get("HOTPOTQA_CORPUS_DATA_ROOT")
+        or str(_DEFAULT_HOTPOTQA_CORPUS_DATA_ROOT)
+    )
+    return Path(raw).expanduser().resolve()
+
+
+HOTPOTQA_CORPUS_DATA_ROOT = resolve_hotpotqa_corpus_data_root()
+# Backward-compatible alias for older smoke tests/imports. New code should use HOTPOTQA_CORPUS_DATA_ROOT.
+HOTPOTQA_DATA_ROOT = HOTPOTQA_CORPUS_DATA_ROOT
+HOTPOTQA_INDEX_BIN = HOTPOTQA_CORPUS_DATA_ROOT / "index.bin"
+# Passage text for decoding search hits; must match hpqa_corpus.jsonl used when building the index.
+HOTPOTQA_CORPUS_JSONL = HOTPOTQA_CORPUS_DATA_ROOT / "hpqa_corpus.jsonl"
+# hpqa_corpus.npy is only produced by process_hotpotqa for embedding cache; not loaded at runtime.
+
+# Default BGE checkpoint (local dir or Hugging Face hub id). Override via YAML `embedding_model_name` or
+# `HOTPOTQA_EMBEDDING_MODEL` for portability.
+DEFAULT_HOTPOTQA_EMBEDDING_MODEL = (
+    os.environ.get("HOTPOTQA_EMBEDDING_MODEL", "/data/wdy/models/bge-large-en-v1.5").strip()
+    or "/data/wdy/models/bge-large-en-v1.5"
+)
 
 logger = logging.getLogger(__name__)
 
 
 def default_hotpotqa_embedding_device() -> str:
-    """从环境变量读取期望设备字符串（可能为 cuda:N），实际可用性见 `normalize_embedding_device`。"""
+    """Read desired device string from env (e.g. cuda:N); see `normalize_embedding_device` for actual resolution."""
     return os.environ.get("HOTPOTQA_EMBEDDING_DEVICE", "cpu").strip() or "cpu"
 
 
 def normalize_embedding_device(requested: str) -> str:
     """
-    将配置里的设备解析为 FlagEmbedding 可用的 `devices` 字符串。
+    Resolve configured device to a FlagEmbedding-compatible `devices` string.
 
-    Ray 的 AgentFlowWorker 等进程常 **看不到任何 GPU**（未分配 CUDA 或隔离了可见设备），
-    此时若仍传 `cuda:*` 会报「no CUDA GPUs are available」——自动回退 `cpu` 并打 warning。
+    Ray AgentFlowWorker processes often see **no GPUs** (no CUDA device assigned or visibility
+    masked). Passing `cuda:*` then raises "no CUDA GPUs are available" — we fall back to `cpu`
+    with a warning.
     """
     dev = (requested or "cpu").strip() or "cpu"
     if dev.lower() == "cpu":
@@ -61,6 +93,35 @@ def normalize_embedding_device(requested: str) -> str:
     return dev
 
 
+def resolve_hotpotqa_embedding_devices(
+    embedding_devices: Optional[str],
+    agent_flow_worker_index: Optional[int],
+) -> Optional[str]:
+    """Pick BGE `devices` for HotpotQAAgentFlow before constructing `HotpotQASearchToolLegacy`.
+
+    Args:
+        embedding_devices: Non-empty value from YAML ``embedding_devices``; if set, it wins.
+        agent_flow_worker_index: Index of the Ray ``AgentFlowWorker`` (0 .. N-1).
+
+    Returns:
+        Device string for FlagEmbedding, or ``None`` to use ``HotpotQASearchToolLegacy`` defaults
+        (``HOTPOTQA_EMBEDDING_DEVICE`` env, then ``cpu``).
+
+    If environment variable ``HOTPOTQA_EMBEDDING_PER_WORKER_GPU`` is truthy (``1``/``true``/``yes``)
+    and ``agent_flow_worker_index`` is not ``None``, uses ``cuda:{index}`` (after
+    :func:`normalize_embedding_device`), so each of 4 workers can colocate BGE on its training GPU.
+    """
+    if embedding_devices is not None:
+        s = str(embedding_devices).strip()
+        if s and s.lower() != "null":
+            return s
+    flag = os.environ.get("HOTPOTQA_EMBEDDING_PER_WORKER_GPU", "").strip().lower()
+    if flag in ("1", "true", "yes", "on") and agent_flow_worker_index is not None:
+        raw = f"cuda:{int(agent_flow_worker_index)}"
+        return normalize_embedding_device(raw)
+    return None
+
+
 @dataclass
 class Passage:
     pid: int
@@ -77,7 +138,7 @@ class PassagePool:
         return any(p.pid == pid for p in self.passages)
 
     def add_passage(self, passage: Passage) -> None:
-        # 按正文去重；pid 用池内序号（避免多次 search 时 parse 侧 pid 恒为 0~4 导致后续检索全被丢弃）
+        # Dedupe by passage text; pid is the index in-pool (avoids fixed 0~4 ids across searches dropping hits).
         if any(p.text == passage.text for p in self.passages):
             return
         pid = len(self.passages)
@@ -98,17 +159,17 @@ class PassagePool:
 
 class HotpotQASearchToolLegacy:
     """
-    HotpotQA 本地 FAISS 检索，行为对齐大规模训练验证过的实现：
-    `Agent-R1-legacy/agent_r1/tool/tools/search_tool.py`（SearchTool）。
+    Local HotpotQA FAISS retrieval; behavior matches the production-validated implementation in
+    `Agent-R1-legacy/agent_r1/tool/tools/search_tool.py` (SearchTool).
 
-    相对上游的增强（不改变成功路径语义）：
-    - 数据路径：`HOTPOTQA_DATA_ROOT` + `index.bin` / `hpqa_corpus.jsonl`
-    - 进程内共享 index/corpus/model，避免每轨迹重复加载
-    - `_format_results` 对非法 id 做边界检查（legacy 直接索引可能 IndexError）
-    - `encode_queries` 若为 torch.Tensor 则 `.cpu().numpy()`，便于非 CPU 设备与 FAISS CPU 索引衔接
+    Extensions vs. upstream (success-path semantics unchanged):
+    - Data layout: `HOTPOTQA_CORPUS_DATA_ROOT` + `index.bin` / `hpqa_corpus.jsonl`
+    - Process-wide shared index/corpus/model to avoid reloading every trajectory
+    - `_format_results` bounds-checks ids (legacy direct indexing could raise IndexError)
+    - If `encode_queries` returns torch.Tensor, converts via `.cpu().numpy()` for FAISS CPU index I/O
 
-    上游验证配置：`FlagAutoModel.from_finetuned(..., devices="cpu")`；生产训练建议 CPU 编码，
-    若设 `HOTPOTQA_EMBEDDING_DEVICE=cuda:*` 需保证在同一线程调用（见 hotpotqa_agent_flow）。
+    Upstream often uses `FlagAutoModel.from_finetuned(..., devices="cpu")`; CPU encode is recommended
+    for training. If `HOTPOTQA_EMBEDDING_DEVICE=cuda:*`, call from the same thread (see hotpotqa_agent_flow).
     """
 
     _shared_lock = threading.RLock()
@@ -119,13 +180,14 @@ class HotpotQASearchToolLegacy:
 
     def __init__(
         self,
-        embedding_model_name: str = "BAAI/bge-large-en-v1.5",
+        embedding_model_name: str = DEFAULT_HOTPOTQA_EMBEDDING_MODEL,
         query_instruction: str = "Represent this sentence for searching relevant passages: ",
         embedding_devices: Optional[str] = None,
+        corpus_data_dir: Optional[str] = None,
     ) -> None:
-        self.data_dir = HOTPOTQA_DATA_ROOT
-        self.index_path = HOTPOTQA_INDEX_BIN
-        self.corpus_path = HOTPOTQA_CORPUS_JSONL
+        self.data_dir = resolve_hotpotqa_corpus_data_root(corpus_data_dir)
+        self.index_path = self.data_dir / "index.bin"
+        self.corpus_path = self.data_dir / "hpqa_corpus.jsonl"
         self.embedding_model_name = embedding_model_name
         self.query_instruction = query_instruction
         raw = (embedding_devices if embedding_devices is not None else default_hotpotqa_embedding_device()).strip() or "cpu"
@@ -146,7 +208,7 @@ class HotpotQASearchToolLegacy:
         self.close()
 
     def _ensure_loaded(self) -> None:
-        cache_key = f"{HOTPOTQA_DATA_ROOT}|{self.embedding_devices}|{self.embedding_model_name}"
+        cache_key = f"{self.data_dir}|{self.embedding_devices}|{self.embedding_model_name}"
         with self.__class__._shared_lock:
             if (
                 self.__class__._shared_key != cache_key
@@ -159,7 +221,12 @@ class HotpotQASearchToolLegacy:
                 if not self.corpus_path.exists():
                     raise FileNotFoundError(f"Corpus file not found: {self.corpus_path}")
 
+                logger.info("HotpotQASearchToolLegacy: loading FAISS index from %s", self.index_path)
                 index = faiss.read_index(str(self.index_path))
+                logger.info(
+                    "HotpotQASearchToolLegacy: loading corpus jsonl from %s (may take several minutes)",
+                    self.corpus_path,
+                )
                 corpus: list[str] = []
                 with self.corpus_path.open("r", encoding="utf-8") as f:
                     for line in f:
@@ -218,7 +285,7 @@ class HotpotQASearchToolLegacy:
             return {"content": str(e), "success": False}
 
     def batch_execute(self, args_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """与 Agent-R1-legacy `SearchTool.batch_execute` 相同：单次 encode + search，失败则每条返回同一 str(e)。"""
+        """Same contract as Agent-R1-legacy `SearchTool.batch_execute`: one encode + search; on failure each row gets str(e)."""
         if not args_list:
             return []
         try:
@@ -242,7 +309,7 @@ class HotpotQASearchToolLegacy:
         with self.__class__._shared_lock:
             assert self._model is not None
             out = self._model.encode_queries(queries)
-        # FAISS CPU Index::search 需要主存 float32 ndarray；BGE 在 GPU 上可能返回 torch.Tensor
+        # FAISS CPU Index::search expects host float32 ndarray; BGE on GPU may return torch.Tensor.
         if torch.is_tensor(out):
             out = out.detach().float().cpu().numpy()
         arr = np.asarray(out, dtype=np.float32)

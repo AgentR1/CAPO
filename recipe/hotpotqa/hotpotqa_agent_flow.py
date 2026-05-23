@@ -29,7 +29,12 @@ from recipe.hotpotqa.prompts import (
     HOTPOTQA_TOOL_SCHEMAS,
     HOTPOTQA_USER_PROMPT,
 )
-from recipe.hotpotqa.utils import HotpotQASearchToolLegacy, parse_legacy_tool_result
+from recipe.hotpotqa.utils import (
+    DEFAULT_HOTPOTQA_EMBEDDING_MODEL,
+    HotpotQASearchToolLegacy,
+    parse_legacy_tool_result,
+    resolve_hotpotqa_embedding_devices,
+)
 from verl.experimental.agent_loop.agent_loop import AsyncLLMServerManager, DictConfigWrap
 from verl.experimental.agent_loop.tool_parser import FunctionCall, ToolParser
 from verl.utils.profiler import simple_timer
@@ -173,11 +178,16 @@ class HotpotQAAgentFlow(AgentFlowBase):
         self.response_length = self.config.actor_rollout_ref.rollout.response_length
         self.tool_schemas = HOTPOTQA_TOOL_SCHEMAS
 
-        embedding_model_name = kwargs.get("embedding_model_name", "BAAI/bge-large-en-v1.5")
-        embedding_devices = kwargs.get("embedding_devices", None)
+        corpus_data_dir = kwargs.get("corpus_data_dir")
+        embedding_model_name = kwargs.get("embedding_model_name", DEFAULT_HOTPOTQA_EMBEDDING_MODEL)
+        embedding_devices = resolve_hotpotqa_embedding_devices(
+            kwargs.get("embedding_devices"),
+            kwargs.get("agent_flow_worker_index"),
+        )
         self.search_tool = HotpotQASearchToolLegacy(
             embedding_model_name=embedding_model_name,
             embedding_devices=embedding_devices,
+            corpus_data_dir=corpus_data_dir,
         )
         self.enable_tool_parse_feedback = bool(kwargs.get("enable_tool_parse_feedback", True))
 

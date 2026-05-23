@@ -2,14 +2,15 @@
 """
 Smoke test for HotpotQASearchToolLegacy (local FAISS + BGE).
 
-Run from repo root (与训练时相同的 Python 环境):
+Run from repo root (same Python env as training):
 
   python recipe/hotpotqa/test_search_tool.py
   python recipe/hotpotqa/test_search_tool.py "Who founded Apple?"
 
-可选环境变量（与 recipe/hotpotqa/utils.py 一致）：
-  HOTPOTQA_DATA_ROOT        默认 /root/data
-  HOTPOTQA_EMBEDDING_DEVICE 默认 cpu；BGE 编码用，如 cuda:4
+Optional env vars (same as recipe/hotpotqa/utils.py):
+  HOTPOTQA_CORPUS_DATA_ROOT defaults to <repo>/data/corpus/hotpotqa_corpus
+  HOTPOTQA_EMBEDDING_DEVICE defaults to cpu; for BGE encoding e.g. cuda:0 (when not using HOTPOTQA_EMBEDDING_PER_WORKER_GPU)
+  HOTPOTQA_EMBEDDING_PER_WORKER_GPU  if 1, agent worker i uses cuda:i (colocate with training GPUs)
 """
 from __future__ import annotations
 
@@ -23,7 +24,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from recipe.hotpotqa.utils import (  # noqa: E402
+    DEFAULT_HOTPOTQA_EMBEDDING_MODEL,
     HOTPOTQA_CORPUS_JSONL,
+    HOTPOTQA_CORPUS_DATA_ROOT,
     HOTPOTQA_DATA_ROOT,
     HOTPOTQA_INDEX_BIN,
     HotpotQASearchToolLegacy,
@@ -42,12 +45,13 @@ def main() -> None:
     parser.add_argument(
         "--embedding_model",
         type=str,
-        default="BAAI/bge-large-en-v1.5",
+        default=DEFAULT_HOTPOTQA_EMBEDDING_MODEL,
         help="Must match the model used when building index.bin.",
     )
     args = parser.parse_args()
 
-    print(f"HOTPOTQA_DATA_ROOT = {HOTPOTQA_DATA_ROOT}")
+    print(f"HOTPOTQA_CORPUS_DATA_ROOT = {HOTPOTQA_CORPUS_DATA_ROOT}")
+    print(f"HOTPOTQA_DATA_ROOT alias  = {HOTPOTQA_DATA_ROOT}")
     print(f"index.bin exists     = {HOTPOTQA_INDEX_BIN.exists()}  ({HOTPOTQA_INDEX_BIN})")
     print(f"hpqa_corpus.jsonl    = {HOTPOTQA_CORPUS_JSONL.exists()}  ({HOTPOTQA_CORPUS_JSONL})")
     print(f"query                = {args.query!r}")

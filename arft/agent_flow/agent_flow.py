@@ -647,6 +647,7 @@ class AgentFlowWorkerBase:
                 processor=self.processor,
                 dataset_cls=self.dataset_cls,
                 dataset_config=self.config.data,
+                agent_flow_worker_index=getattr(self, "agent_flow_worker_index", None),
             )
             output: AgentFlowOutput = await agent_flow.run(sampling_params, **kwargs)
 
@@ -796,14 +797,21 @@ class AgentFlowWorker(AgentFlowWorkerBase):
     """Agent flow worker takes a batch of messages and run each message in an agent flow."""
 
     def __init__(
-        self, config: DictConfig, server_handles: list[ray.actor.ActorHandle], reward_router_address: str = None
+        self,
+        config: DictConfig,
+        server_handles: list[ray.actor.ActorHandle],
+        reward_router_address: str = None,
+        worker_index: int = 0,
     ):
         """Initialize agent flow manager.
+
         Args:
             config (DictConfig): YAML config.
             server_handles (List[ray.actor.ActorHandle]): OpenAI compatible LLM server actor handles.
             reward_router_address (str): reward router address.
+            worker_index (int): Worker rank (0..num_workers-1); passed to agent flows e.g. for per-GPU BGE.
         """
+        self.agent_flow_worker_index = int(worker_index)
         super().__init__(config, server_handles, reward_router_address)
 
 
@@ -918,10 +926,10 @@ class AgentFlowManager:
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=node_id, soft=True
                     ),
-                    # AgentFlowWorker 不请求 GPU 配额，但仍需继承父进程的 CUDA 可见设备，
-                    # 以便检索用的 BGE 等模型可选用 GPU（如 HOTPOTQA_EMBEDDING_DEVICE=cuda:4）。
+                    # No GPU resource request, but preserve driver-visible GPUs (see RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES)
+                    # so tools like HotpotQA BGE can use cuda:N (or per-worker cuda:i via HOTPOTQA_EMBEDDING_PER_WORKER_GPU).
                     runtime_env={"env_vars": {"RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1"}},
-                ).remote(self.config, self.server_handles, self.reward_router_address)
+                ).remote(self.config, self.server_handles, self.reward_router_address, worker_index=i)
             )
 
     def generate_sequences(self, prompts: DataProto) -> DataProto:
