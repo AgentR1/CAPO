@@ -30,6 +30,12 @@ from recipe.paper_search.prompts import (
     PAPERSEARCH_USER_PROMPT,
     SELECT_PROMPT,
 )
+from recipe.paper_search.tool_utils import (
+    PAPER_SEARCH_TOOL_NAMES,
+    decode_tool_arguments,
+    extract_expand_paper_id,
+    extract_search_query,
+)
 from recipe.paper_search.utils import Paper, PaperPool, SelectorClient
 from recipe.paper_search.inference.inference_date_utils import parse_year_month_str
 from recipe.paper_search.inference.inference_paper_client import InferencePaperClient
@@ -358,10 +364,13 @@ class PaperSearchInferenceAgent:
     async def _execute_tool_calls(self, tool_calls: list[Any]) -> tuple[float, list[dict[str, Any]]]:
         parsed: list[tuple[str, dict[str, Any]]] = []
         for tc in tool_calls:
-            try:
-                tool_args = json.loads(tc.arguments)
-            except Exception as exc:
-                self.logger.info("Bad tool arguments: %s", exc)
+            if tc.name not in PAPER_SEARCH_TOOL_NAMES:
+                self.logger.info("Unknown tool call: %s", tc.name)
+                continue
+
+            tool_args = decode_tool_arguments(tc.name, tc.arguments)
+            if not tool_args:
+                self.logger.info("Bad tool arguments for %s: %r", tc.name, tc.arguments)
                 continue
             parsed.append((tc.name, tool_args))
 
@@ -370,15 +379,15 @@ class PaperSearchInferenceAgent:
         for name, tool_args in parsed:
             summaries.append({"name": name, "arguments": tool_args})
             if name == "search":
-                q = tool_args.get("query")
-                if q:
-                    self.history_actions.append(("search", str(q)))
-                    tasks.append(self.search(str(q)))
+                query = extract_search_query(tool_args)
+                if query:
+                    self.history_actions.append(("search", query))
+                    tasks.append(self.search(query))
             elif name == "expand":
-                pid = tool_args.get("paper_id")
-                if pid:
-                    self.history_actions.append(("expand", str(pid)))
-                    tasks.append(self.expand(str(pid)))
+                paper_id = extract_expand_paper_id(tool_args)
+                if paper_id:
+                    self.history_actions.append(("expand", paper_id))
+                    tasks.append(self.expand(paper_id))
 
         reward_total = sum(await asyncio.gather(*tasks)) if tasks else 0.0
         return reward_total, summaries

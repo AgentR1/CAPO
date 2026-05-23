@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import threading
@@ -11,6 +10,13 @@ from transformers import AutoProcessor, AutoTokenizer
 from arft.agent_flow.agent_flow import AgentFlowBase, AgentFlowOutput, AgentFlowStep, register
 from arft.reward_loop import ARFTRewardLoopWorker as RewardLoopWorker
 from recipe.paper_search.prompts import PAPERSEARCH_SYSTEM_PROMPT, PAPERSEARCH_TOOL_SCHEMAS, PAPERSEARCH_USER_PROMPT, SELECT_PROMPT
+from recipe.paper_search.tool_utils import (
+    PAPER_SEARCH_TOOL_NAMES,
+    decode_tool_arguments,
+    extract_expand_paper_id,
+    extract_search_query,
+    recover_tool_calls_from_text,
+)
 from recipe.paper_search.utils import Paper, PaperPool, PaperSearchClient, SelectorClient
 from verl.experimental.agent_loop.agent_loop import AsyncLLMServerManager, DictConfigWrap
 from verl.experimental.agent_loop.tool_parser import ToolParser
@@ -121,6 +127,10 @@ class PaperSearchAgentFlow(AgentFlowBase):
 
             response_ids = output.token_ids[: self.response_length]
             _, tool_calls = await self.tool_parser.extract_tool_calls(response_ids)
+            response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+
+            if not tool_calls:
+                tool_calls = recover_tool_calls_from_text(response_text)
 
             if not tool_calls:
                 step = AgentFlowStep(
@@ -144,20 +154,27 @@ class PaperSearchAgentFlow(AgentFlowBase):
 
             tasks = []
             for tool_call in tool_calls:
-                try:
-                    tool_args = json.loads(tool_call.arguments)
-                except Exception as exc:
-                    logger.warning("Error parsing tool call arguments: %s", exc)
+                if tool_call.name not in PAPER_SEARCH_TOOL_NAMES:
+                    logger.warning("Unknown tool call: %s", tool_call.name)
+                    continue
+
+                tool_args = decode_tool_arguments(tool_call.name, tool_call.arguments)
+                if not tool_args:
+                    logger.warning(
+                        "Invalid tool arguments for %s: %r",
+                        tool_call.name,
+                        tool_call.arguments,
+                    )
                     continue
 
                 if tool_call.name == "search":
-                    query = tool_args.get("query")
+                    query = extract_search_query(tool_args)
                     if query:
                         tasks.append(self.search(query, **kwargs))
                         self.history_actions.append(("search", query))
                         total_search_action_count += 1
                 elif tool_call.name == "expand":
-                    paper_id = tool_args.get("paper_id")
+                    paper_id = extract_expand_paper_id(tool_args)
                     if paper_id:
                         tasks.append(self.expand(paper_id, **kwargs))
                         self.history_actions.append(("expand", paper_id))
