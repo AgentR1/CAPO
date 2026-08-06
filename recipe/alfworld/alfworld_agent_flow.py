@@ -85,7 +85,7 @@ class AlfworldAgentFlow(AgentFlowBase):
         self.executor = AlfworldToolExecutor(max_episode_steps=self.max_episode_steps)
         self.current_observation: str = ""
         self.current_admissible_commands: list[str] = []
-        self.history_actions: list[str] = []
+        self.recent_history: list[dict[str, str]] = []
         self.steps: list[AgentFlowStep] = []
 
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentFlowOutput:
@@ -105,7 +105,7 @@ class AlfworldAgentFlow(AgentFlowBase):
         admissible_commands = reset_info.get("admissible_commands")
         self.current_admissible_commands = admissible_commands if isinstance(admissible_commands, list) else []
         task_text = extract_task_text(self.current_observation, extra_info.get("goal_text"))
-        self.history_actions = []
+        self.recent_history = []
         self.steps = []
 
         metrics: dict[str, Any] = {}
@@ -135,7 +135,7 @@ class AlfworldAgentFlow(AgentFlowBase):
             messages = build_alfworld_messages(
                 task_text=task_text,
                 observation=observation_before_action,
-                history_actions=self.history_actions,
+                recent_history=self.recent_history,
                 admissible_commands=self.current_admissible_commands,
             )
 
@@ -185,7 +185,7 @@ class AlfworldAgentFlow(AgentFlowBase):
                         info = result.get("info", {}) or {}
                         admissible_commands = info.get("admissible_commands")
                         self.current_admissible_commands = admissible_commands if isinstance(admissible_commands, list) else []
-                        self.history_actions = result.get("history_actions", self.history_actions)
+                        self.recent_history.append({"observation": observation_before_action, "action": command})
                         if "success" in info:
                             final_success_flag = bool(info["success"])
                         elif "won" in info:
@@ -197,7 +197,9 @@ class AlfworldAgentFlow(AgentFlowBase):
                     self.current_observation,
                     invalid_reason,
                 )
-                self.history_actions.append(f"{INVALID_TOOL_CALL_ACTION}: {invalid_reason}")
+                self.recent_history.append(
+                    {"observation": observation_before_action, "action": f"{INVALID_TOOL_CALL_ACTION}: {invalid_reason}"}
+                )
 
             step = AgentFlowStep(
                 prompt_ids=prompt_ids,

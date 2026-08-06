@@ -474,7 +474,11 @@ def register(agent_name: str):
 
     def decorator(subclass: type[AgentFlowBase]) -> type[AgentFlowBase]:
         fqdn = f"{subclass.__module__}.{subclass.__qualname__}"
-        _agent_flow_registry[agent_name] = {"_target_": fqdn}
+        # An external agent-flow YAML may already have been loaded under this
+        # name.  Importing its ``_target_`` then executes this decorator; do
+        # not replace that YAML (and its recipe-specific kwargs) with the bare
+        # registration fallback.
+        _agent_flow_registry.setdefault(agent_name, {"_target_": fqdn})
         return subclass
 
     return decorator

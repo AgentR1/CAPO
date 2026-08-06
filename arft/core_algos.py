@@ -65,6 +65,7 @@ def compute_gae_advantage_return(
     step_indices: np.ndarray,
     gamma: torch.Tensor,
     lam: torch.Tensor,
+    return_step_diagnostics: bool = False,
 ):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py
 
@@ -83,21 +84,23 @@ def compute_gae_advantage_return(
     Returns:
         advantages: `(torch.Tensor)`
             shape: (bs, response_length)
-        Returns: `(torch.Tensor)`
+        returns: `(torch.Tensor)`
             shape: (bs, response_length)
+        step_diagnostics: `(dict[str, list[float]] | None)`
+            Per-row step-level GAE stats when ``return_step_diagnostics=True``.
 
     """
     device = token_level_rewards.device
 
     with torch.no_grad():
         # Step-level reward: sum of token rewards inside the step (only valid response tokens).
-        rewards = (token_level_rewards * response_mask).sum(dim=1)
+        step_rewards = (token_level_rewards * response_mask).sum(dim=1)
 
         # IMPORTANT: In our "sequence = action" setting, V_t should be the state value
         # BEFORE generating the first response token (i.e., after the last prompt token).
         # The critic (`dp_critic.py`) slices values as `values[:, -response_length-1:-1]`,
         # so `values[:, 0]` corresponds to the prompt-last position (action start).
-        values = values[:, 0]
+        step_values = values[:, 0]
 
         # Map trajectories to contiguous ids for compact padding.
         # Use numpy's unique to handle both object and numeric types
@@ -109,33 +112,56 @@ def compute_gae_advantage_return(
 
         # reshape to (num_traj, max_step).
         # Use the same dtype as rewards and values to avoid type mismatch
-        rewards_map = torch.zeros((num_traj, max_step), dtype=rewards.dtype, device=device)
-        values_map = torch.zeros((num_traj, max_step), dtype=values.dtype, device=device)
+        rewards_map = torch.zeros((num_traj, max_step), dtype=step_rewards.dtype, device=device)
+        values_map = torch.zeros((num_traj, max_step), dtype=step_values.dtype, device=device)
 
-        rewards_map[traj_inv, step_ids] = rewards
-        values_map[traj_inv, step_ids] = values
+        rewards_map[traj_inv, step_ids] = step_rewards
+        values_map[traj_inv, step_ids] = step_values
 
+        bootstrap_next_value = torch.zeros(num_traj, dtype=values_map.dtype, device=device)
         lastgaelam = 0
         advantages_reversed = []
+        deltas_reversed = []
+        next_values_reversed = []
 
         for t in reversed(range(max_step)):
-            nextvalues = values_map[:, t + 1] if t < max_step - 1 else 0.0
+            nextvalues = values_map[:, t + 1] if t < max_step - 1 else bootstrap_next_value
             delta = rewards_map[:, t] + gamma * nextvalues - values_map[:, t]
             lastgaelam = delta + gamma * lam * lastgaelam
             advantages_reversed.append(lastgaelam)
+            deltas_reversed.append(delta)
+            next_values_reversed.append(nextvalues)
         advantages_map = torch.stack(advantages_reversed[::-1], dim=1)
+        deltas_map = torch.stack(deltas_reversed[::-1], dim=1)
+        next_values_map = torch.stack(next_values_reversed[::-1], dim=1)
 
         # Map back to batch rows and then to token level.
-        advantages = advantages_map[traj_inv, step_ids]
-        returns = advantages + values
+        raw_advantages = advantages_map[traj_inv, step_ids]
+        step_returns = raw_advantages + step_values
+        step_deltas = deltas_map[traj_inv, step_ids]
+        step_next_values = next_values_map[traj_inv, step_ids]
 
         # Whiten at step-level (not token-level) to avoid counting duplicated values.
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        whitened_advantages = (raw_advantages - raw_advantages.mean()) / (raw_advantages.std() + 1e-8)
 
         # Broadcast to token level
-        advantages = advantages.unsqueeze(1) * response_mask
-        returns = returns.unsqueeze(1) * response_mask
+        advantages = whitened_advantages.unsqueeze(1) * response_mask
+        returns = step_returns.unsqueeze(1) * response_mask
 
+        step_diagnostics = None
+        if return_step_diagnostics:
+            step_diagnostics = {
+                "step_reward": step_rewards.detach().cpu().tolist(),
+                "step_value": step_values.detach().cpu().tolist(),
+                "step_advantage_raw": raw_advantages.detach().cpu().tolist(),
+                "step_advantage": whitened_advantages.detach().cpu().tolist(),
+                "step_return": step_returns.detach().cpu().tolist(),
+                "step_delta": step_deltas.detach().cpu().tolist(),
+                "step_next_value": step_next_values.detach().cpu().tolist(),
+            }
+
+    if return_step_diagnostics:
+        return advantages, returns, step_diagnostics
     return advantages, returns
 
 

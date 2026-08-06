@@ -33,3 +33,6 @@ data/raw/
 data/corpus/2wikimultihopqa_corpus/
 data/corpus/musique_corpus/
 data/corpus/hotpotqa/raw_*/
+docs/
+.ms_upload_cache
+reference/

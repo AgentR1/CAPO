@@ -1,0 +1,10 @@
+- name: scienceworld_agent
+  _target_: recipe.scienceworld.scienceworld_agent_flow.ScienceWorldAgentFlow
+  max_steps: 30
+  # Match EPO: the agent flow stops after 30 decisions, while the simulator's
+  # own limit stays above that horizon so timeout is not treated as a terminal
+  # positive-score episode.
+  max_episode_steps: 100
+  env_pool_size: 1
+  simplification: "easy"
+  success_reward: 10.0

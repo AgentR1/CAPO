@@ -15,6 +15,7 @@
 Note that we don't combine the main with ray_trainer as ray_trainer is used by other mpain.
 """
 
+import copy
 import os
 import socket
 
@@ -169,7 +170,7 @@ class TaskRunner:
         # Note: sync mode validation is now handled in RolloutConfig.__post_init__
         # Always use async worker since sync mode is deprecated and rejected
         if config.actor_rollout_ref.actor.strategy in {"fsdp", "fsdp2"}:
-            from verl.workers.fsdp_workers import AsyncActorRolloutRefWorker
+            from arft.workers.fsdp_workers import AsyncActorRolloutRefWorker
 
             actor_rollout_cls = AsyncActorRolloutRefWorker
             ray_worker_group_cls = RayWorkerGroup
@@ -311,9 +312,21 @@ class TaskRunner:
         # Add a reference policy worker if KL loss or KL reward is used.
         self.add_ref_policy_worker(config, actor_rollout_cls)
 
+        # Agent-RL group methods expand each sampled task into ``rollout.n``
+        # completions before the actor update.  Keep the launch config in task
+        # units, but validate actor mini-batches in the effective completion
+        # units.  This avoids changing the vendored verl validator or the
+        # runtime configuration used by the trainer.
+        validation_config = config
+        rollout_n = config.actor_rollout_ref.rollout.n
+        if rollout_n > 1:
+            validation_config = copy.deepcopy(config)
+            validation_config.data.train_batch_size *= rollout_n
+            validation_config.actor_rollout_ref.rollout.n = 1
+
         # validate config
         validate_config(
-            config=config,
+            config=validation_config,
             use_reference_policy=need_reference_policy(self.role_worker_mapping),
             use_critic=need_critic_agent_ppo(config),
         )

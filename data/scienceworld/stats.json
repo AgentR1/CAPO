@@ -1,0 +1,8 @@
+{
+  "max_episode_steps": 50,
+  "splits": {
+    "train": 3592,
+    "test": 1819,
+    "test_in_train": 100
+  }
+}

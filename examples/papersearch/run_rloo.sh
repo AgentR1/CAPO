@@ -4,13 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-export EXP_NAME="${EXP_NAME:-papersearch_rloo}"
-export ARFT_GRPO_ROLLOUT_N="${ARFT_RLOO_ROLLOUT_N:-${ARFT_GRPO_ROLLOUT_N:-8}}"
+RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
+export EXP_NAME="${EXP_NAME:-papersearch_rloo_${RUN_TIMESTAMP}}"
 
-exec bash "$ROOT_DIR/examples/run_papersearch_grpo.sh" \
+exec bash "$SCRIPT_DIR/run_grpo.sh" \
     algorithm.adv_estimator=rloo \
     actor_rollout_ref.actor.use_kl_loss=False \
     algorithm.use_kl_in_reward=True \
-    algorithm.kl_penalty="${ARFT_RLOO_KL_PENALTY:-kl}" \
-    algorithm.kl_ctrl.kl_coef="${ARFT_RLOO_KL_COEF:-0.001}" \
+    algorithm.kl_penalty=kl \
+    algorithm.kl_ctrl.kl_coef=0.001 \
     "$@"

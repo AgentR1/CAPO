@@ -39,10 +39,16 @@ class AlfworldToolExecutor:
         }
 
 
-def format_history_actions(actions: list[str]) -> str:
-    if not actions:
+def format_recent_interactions(history: list[dict[str, str]], *, limit: int = 2) -> str:
+    """Render the fixed observation/action memory window used by the agent."""
+    if not history:
         return "None"
-    return "\n".join(f"[Action {i + 1}] {action}" for i, action in enumerate(actions))
+    recent = history[-limit:]
+    start = len(history) - len(recent) + 1
+    return "\n\n".join(
+        f"[Observation {start + offset}]\n{record['observation']}\n[Action {start + offset}]\n{record['action']}"
+        for offset, record in enumerate(recent)
+    )
 
 
 def format_admissible_commands(commands: list[str] | None) -> str:
@@ -69,7 +75,7 @@ def build_alfworld_messages(
     *,
     task_text: str,
     observation: str,
-    history_actions: list[str],
+    recent_history: list[dict[str, str]],
     admissible_commands: list[str] | None,
 ) -> list[dict[str, str]]:
     return [
@@ -79,7 +85,7 @@ def build_alfworld_messages(
             "content": ALFWORLD_USER_PROMPT.format(
                 task_text=task_text,
                 observation=observation,
-                history_actions=format_history_actions(history_actions),
+                history_actions=format_recent_interactions(recent_history),
                 admissible_commands=format_admissible_commands(admissible_commands),
             ),
         },

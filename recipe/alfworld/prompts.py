@@ -10,11 +10,11 @@ ALFWORLD_SYSTEM_PROMPT = (
 ALFWORLD_USER_PROMPT = """### Task
 {task_text}
 
+### Recent Interaction History
+{history_actions}
+
 ### Current Observation
 {observation}
-
-### History Actions
-{history_actions}
 
 ### Admissible Commands
 {admissible_commands}

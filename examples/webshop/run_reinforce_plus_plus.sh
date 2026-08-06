@@ -4,15 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-export EXP_NAME="${EXP_NAME:-webshop_reinforce_plus_plus}"
-export WEBSHOP_VAL_DUMP_DIR="${WEBSHOP_VAL_DUMP_DIR:-$ROOT_DIR/outputs/webshop_validation/reinforce_plus_plus}"
-export ARFT_GRPO_ROLLOUT_N="${ARFT_REINFORCE_PLUS_PLUS_ROLLOUT_N:-${ARFT_GRPO_ROLLOUT_N:-8}}"
+RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
+export EXP_NAME="${EXP_NAME:-webshop_reinforce_plus_plus_${RUN_TIMESTAMP}}"
+export WEBSHOP_VAL_DUMP_DIR="${WEBSHOP_VAL_DUMP_DIR:-$ROOT_DIR/outputs/webshop_validation/$EXP_NAME}"
 
-exec bash "$ROOT_DIR/examples/run_webshop_grpo.sh" \
+exec bash "$SCRIPT_DIR/run_grpo.sh" \
     algorithm.adv_estimator=reinforce_plus_plus \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.kl_loss_type=mse \
     algorithm.use_kl_in_reward=True \
-    algorithm.kl_penalty="${ARFT_REINFORCE_PLUS_PLUS_KL_PENALTY:-kl}" \
-    algorithm.kl_ctrl.kl_coef="${ARFT_REINFORCE_PLUS_PLUS_KL_COEF:-0.001}" \
+    algorithm.kl_penalty=kl \
+    algorithm.kl_ctrl.kl_coef=0.001 \
     "$@"

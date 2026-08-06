@@ -134,6 +134,21 @@ def _critic_vf_loss_response_mask(response_mask: torch.Tensor, adv_key: str) -> 
     return value_mask
 
 
+def _scatter_step_gae_diagnostics(
+    data: DataProto,
+    valid_mask: torch.Tensor,
+    step_diagnostics: dict[str, list[float]],
+) -> None:
+    """Write per-row step GAE diagnostics into ``data.non_tensor_batch``."""
+    batch_size = len(data)
+    valid_indices = torch.where(valid_mask)[0].cpu().numpy()
+    for key, values in step_diagnostics.items():
+        arr = np.full(batch_size, None, dtype=object)
+        for batch_idx, value in zip(valid_indices, values):
+            arr[batch_idx] = value
+        data.non_tensor_batch[key] = arr
+
+
 def compute_advantage(
     data: DataProto,
     adv_estimator: AdvantageEstimator | str,
@@ -184,7 +199,7 @@ def compute_advantage(
     if adv_key == "gae":
         from arft.core_algos import compute_gae_advantage_return
 
-        valid_advantages, valid_returns = compute_gae_advantage_return(
+        valid_advantages, valid_returns, step_diagnostics = compute_gae_advantage_return(
             token_level_rewards=valid_data.batch["token_level_rewards"],
             values=valid_data.batch["values"],
             response_mask=valid_data.batch["response_mask"],
@@ -192,9 +207,11 @@ def compute_advantage(
             step_indices=valid_data.non_tensor_batch["step_indices"],
             gamma=gamma,
             lam=lam,
+            return_step_diagnostics=True,
         )
         advantages[valid_mask] = valid_advantages
         returns[valid_mask] = valid_returns
+        _scatter_step_gae_diagnostics(data, valid_mask, step_diagnostics)
     elif adv_key == "token_gae":
         from arft.core_algos import compute_token_gae_advantage_return
 
@@ -294,6 +311,62 @@ def compute_advantage(
     return data
 
 
+STEP_GAE_DUMP_KEYS = (
+    "step_reward",
+    "step_value",
+    "step_advantage_raw",
+    "step_advantage",
+    "step_return",
+    "step_delta",
+    "step_next_value",
+)
+
+
+def _collect_step_gae_dump_fields(batch: DataProto) -> dict[str, list]:
+    """Collect step-level GAE diagnostics and trajectory metadata for JSONL dump."""
+    dump_fields: dict[str, list] = {}
+    for key in STEP_GAE_DUMP_KEYS:
+        if key in batch.non_tensor_batch:
+            dump_fields[key] = batch.non_tensor_batch[key].tolist()
+
+    for key in ("trajectory_uids", "step_indices"):
+        if key in batch.non_tensor_batch:
+            dump_fields[key] = batch.non_tensor_batch[key].tolist()
+    return dump_fields
+
+
+def _print_step_gae_sample(batch: DataProto, global_steps: int) -> None:
+    """Print one sample trajectory's step-level GAE stats for quick inspection."""
+    if "trajectory_uids" not in batch.non_tensor_batch:
+        return
+
+    trajectory_uids = batch.non_tensor_batch["trajectory_uids"]
+    unique_traj = np.unique(trajectory_uids)
+    if len(unique_traj) == 0:
+        return
+
+    sample_traj = unique_traj[0]
+    rows = np.where(trajectory_uids == sample_traj)[0]
+    if "step_indices" in batch.non_tensor_batch:
+        rows = rows[np.argsort(batch.non_tensor_batch["step_indices"][rows])]
+
+    sample_steps = []
+    for row_idx in rows:
+        step_info = {"row": int(row_idx)}
+        for key in STEP_GAE_DUMP_KEYS:
+            if key in batch.non_tensor_batch:
+                step_info[key] = batch.non_tensor_batch[key][row_idx]
+        if "step_indices" in batch.non_tensor_batch:
+            step_info["step_index"] = batch.non_tensor_batch["step_indices"][row_idx]
+        sample_steps.append(step_info)
+
+    print(
+        f"📊 Step-level GAE sample @ global_step={global_steps}, "
+        f"trajectory_uid={sample_traj}, num_steps={len(sample_steps)}"
+    )
+    pprint(sample_steps)
+
+
 class RayAgentTrainer(RayPPOTrainer):
     """Distributed PPO trainer using Ray for scalable reinforcement learning.
 
@@ -355,7 +428,6 @@ class RayAgentTrainer(RayPPOTrainer):
     def _log_rollout_data(
         self, batch: DataProto, reward_extra_infos_dict: dict, timing_raw: dict, rollout_data_dir: str
     ):
-        # TODO: 以轨迹为单位，将轨迹内的所有 step 的数据都 dump 出来。
         """Log rollout data to disk.
         Args:
             batch (DataProto): The batch containing rollout data
@@ -375,6 +447,11 @@ class RayAgentTrainer(RayPPOTrainer):
                     "request_id",
                     batch.non_tensor_batch["request_id"].tolist(),
                 )
+
+            step_gae_fields = _collect_step_gae_dump_fields(batch)
+            if step_gae_fields:
+                reward_extra_infos_to_dump.update(step_gae_fields)
+                _print_step_gae_sample(batch, self.global_steps)
 
             self._dump_generations(
                 inputs=inputs,
@@ -804,6 +881,11 @@ class RayAgentTrainer(RayPPOTrainer):
                     num_steps = gen_batch_output.meta_info.pop("num_steps")
                     batch = batch.sample_level_repeat(num_steps)
                     batch = batch.union(gen_batch_output)
+                    # Preserve the driver training step through padding, balancing, and
+                    # micro-batching so ARFT loss diagnostics can tag every action row.
+                    batch.non_tensor_batch["global_step"] = np.full(
+                        batch.batch["responses"].shape[0], self.global_steps, dtype=np.int64
+                    )
 
                     # compute global_valid tokens
                     batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()

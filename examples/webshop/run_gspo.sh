@@ -4,16 +4,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-export EXP_NAME="${EXP_NAME:-webshop_gspo}"
-export WEBSHOP_VAL_DUMP_DIR="${WEBSHOP_VAL_DUMP_DIR:-$ROOT_DIR/outputs/webshop_validation/gspo}"
-export ARFT_GRPO_ROLLOUT_N="${ARFT_GSPO_ROLLOUT_N:-${ARFT_GRPO_ROLLOUT_N:-8}}"
+RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
+export EXP_NAME="${EXP_NAME:-webshop_gspo_${RUN_TIMESTAMP}}"
+export WEBSHOP_VAL_DUMP_DIR="${WEBSHOP_VAL_DUMP_DIR:-$ROOT_DIR/outputs/webshop_validation/$EXP_NAME}"
 
-exec bash "$ROOT_DIR/examples/run_webshop_grpo.sh" \
+exec bash "$SCRIPT_DIR/run_grpo.sh" \
     algorithm.adv_estimator=grpo \
     actor_rollout_ref.actor.policy_loss.loss_mode=gspo \
-    actor_rollout_ref.actor.loss_agg_mode=seq-mean-token-mean \
+    actor_rollout_ref.actor.clip_ratio_low=0.0003 \
+    actor_rollout_ref.actor.clip_ratio_high=0.0003 \
     actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef="${ARFT_GSPO_KL_COEF:-0.001}" \
+    actor_rollout_ref.actor.kl_loss_coef=0.001 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     algorithm.use_kl_in_reward=False \
     "$@"

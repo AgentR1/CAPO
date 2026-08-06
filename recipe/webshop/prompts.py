@@ -9,11 +9,11 @@ WEBSHOP_SYSTEM_PROMPT = (
 WEBSHOP_USER_PROMPT = """### Shopping Instruction
 {instruction}
 
-### Current Observation
-{observation}
-
 ### Recent History
 {recent_history}
+
+### Current Observation
+{observation}
 
 ### Available Actions
 {available_actions}

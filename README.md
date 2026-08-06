@@ -146,25 +146,24 @@ Preliminary experiments on HotpotQA demonstrate that step-level credit assignmen
 Training is launched via `arft.main_agent_ppo` with Hydra configuration. Example scripts are provided in `examples/`:
 
 ```bash
-# Step-level advantage (StepPO)
-bash examples/run_hotpotqa_step_adv.sh
+# Token-level advantage (PPO baseline)
+bash examples/hotpotqa/run_ppo.sh
 
-# Token-level advantage (baseline)
-bash examples/run_hotpotqa_token_adv.sh
+# Step-level advantage (StepPO)
+bash examples/hotpotqa/run_steppo.sh
 ```
+
+ScienceWorld uses a 30-step template-and-object protocol with exact-command diagnostics; see [recipe/scienceworld/README.md](recipe/scienceworld/README.md)
+for environment setup, manifest generation, and H100 Slurm launch commands.
 
 Available training configurations:
 
 | Script | Task | Advantage | GPUs |
 |---|---|---|---|
-| `run_hotpotqa_step_adv_mlflow_4gpu.sh` | HotpotQA | Step GAE | 4 |
-| `run_hotpotqa_token_adv_mlflow_4gpu.sh` | HotpotQA | Token GAE | 4 |
-| `run_webshop_step_adv_mlflow_4gpu.sh` | WebShop | Step GAE | 4 |
-| `run_webshop_token_adv_mlflow_4gpu.sh` | WebShop | Token GAE | 4 |
-| `run_alfworld_step_adv_mlflow_4gpu.sh` | ALFWorld | Step GAE | 4 |
-| `run_alfworld_token_adv_mlflow_4gpu.sh` | ALFWorld | Token GAE | 4 |
-| `run_papersearch_step_adv_mlflow_4gpu.sh` | Paper Search | Step GAE | 4 |
-| `run_papersearch_token_adv_mlflow_4gpu.sh` | Paper Search | Token GAE | 4 |
+| `examples/<scene>/run_ppo.sh` | ALFWorld, HotpotQA, PaperSearch, ScienceWorld, WebShop | Token GAE + vanilla PPO | Scene-dependent |
+| `examples/<scene>/run_steppo.sh` | ALFWorld, HotpotQA, PaperSearch, ScienceWorld, WebShop | Step GAE + GSPO loss | Scene-dependent |
+| `examples/<scene>/run_grpo.sh` | ALFWorld, HotpotQA, PaperSearch, ScienceWorld, WebShop | GRPO + vanilla PPO | Scene-dependent |
+| `examples/<scene>/run_gspo.sh` | ALFWorld, HotpotQA, PaperSearch, ScienceWorld, WebShop | GRPO + GSPO loss | Scene-dependent |
 
 ### Key Configuration
 
