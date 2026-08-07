@@ -10,7 +10,7 @@ export PATH="${CONDA_PREFIX:-/data/wdy/.conda/envs/steppo}/bin:${PATH}"
 MODEL_PATH="${SCIENCEWORLD_MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 DATA_ROOT="${SCIENCEWORLD_DATA_ROOT:-$PROJECT_DIR/data/scienceworld}"
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-EXP_NAME="${EXP_NAME:-scienceworld_ppo_${RUN_TIMESTAMP}}"
+EXP_NAME="${EXP_NAME:-scienceworld_ppo}"
 
 python3 -m arft.main_agent_ppo \
     algorithm.adv_estimator=token_gae \
@@ -65,14 +65,15 @@ python3 -m arft.main_agent_ppo \
     trainer.logger='["console","swanlab","mlflow"]' \
     trainer.project_name=ScienceWorld_StepPO \
     trainer.experiment_name="$EXP_NAME" \
+    trainer.resume_mode=auto \
     trainer.validation_data_dir="$PROJECT_DIR/outputs/scienceworld_validation/$EXP_NAME" \
     trainer.rollout_data_dir="$PROJECT_DIR/outputs/scienceworld_rollout/$EXP_NAME" \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.val_before_train=True \
-    trainer.save_freq=50 \
+    trainer.save_freq=10 \
     trainer.test_freq=5 \
-    trainer.max_actor_ckpt_to_keep=3 \
-    trainer.max_critic_ckpt_to_keep=3 \
+    trainer.max_actor_ckpt_to_keep=2 \
+    trainer.max_critic_ckpt_to_keep=2 \
     trainer.total_epochs=5 \
     "$@"

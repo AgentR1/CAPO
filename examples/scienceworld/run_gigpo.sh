@@ -2,7 +2,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-export EXP_NAME="${EXP_NAME:-scienceworld_gigpo_${RUN_TIMESTAMP}}"
+export EXP_NAME="${EXP_NAME:-scienceworld_gigpo}"
 exec bash "$SCRIPT_DIR/run_grpo.sh" \
     algorithm.adv_estimator=gigpo \
     "$@"

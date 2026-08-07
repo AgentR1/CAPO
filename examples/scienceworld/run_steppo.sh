@@ -2,7 +2,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-export EXP_NAME="${EXP_NAME:-scienceworld_steppo_${RUN_TIMESTAMP}}"
+export EXP_NAME="${EXP_NAME:-scienceworld_steppo}"
 exec bash "$SCRIPT_DIR/run_ppo.sh" \
     algorithm.adv_estimator=gae \
     actor_rollout_ref.actor.policy_loss.loss_mode=gspo \

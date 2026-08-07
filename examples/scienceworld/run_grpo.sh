@@ -10,7 +10,7 @@ export PATH="${CONDA_PREFIX:-/data/wdy/.conda/envs/steppo}/bin:${PATH}"
 MODEL_PATH="${SCIENCEWORLD_MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 DATA_ROOT="${SCIENCEWORLD_DATA_ROOT:-$PROJECT_DIR/data/scienceworld}"
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-EXP_NAME="${EXP_NAME:-scienceworld_grpo_${RUN_TIMESTAMP}}"
+EXP_NAME="${EXP_NAME:-scienceworld_grpo}"
 python3 -m arft.main_agent_ppo \
     algorithm.adv_estimator=grpo \
     algorithm.norm_adv_by_std_in_grpo=True \
@@ -53,20 +53,18 @@ python3 -m arft.main_agent_ppo \
     reward_model.enable=False \
     custom_reward_function.path=recipe/scienceworld/reward_fn.py \
     custom_reward_function.name=compute_score \
-    critic.enable=False \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.99 \
-    trainer.critic_warmup=0 \
     trainer.logger='["console","swanlab","mlflow"]' \
     trainer.project_name=ScienceWorld_StepPO \
     trainer.experiment_name="$EXP_NAME" \
+    trainer.resume_mode=auto \
     trainer.validation_data_dir="$PROJECT_DIR/outputs/scienceworld_validation/$EXP_NAME" \
     trainer.rollout_data_dir="$PROJECT_DIR/outputs/scienceworld_rollout/$EXP_NAME" \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.val_before_train=True \
-    trainer.save_freq=50 \
+    trainer.save_freq=10 \
     trainer.test_freq=5 \
-    trainer.max_actor_ckpt_to_keep=3 \
+    trainer.max_actor_ckpt_to_keep=2 \
     trainer.total_epochs=5 \
     "$@"

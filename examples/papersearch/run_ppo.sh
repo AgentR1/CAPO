@@ -31,7 +31,7 @@ export PAPERSEARCH_SELECTOR_MODEL_NAME=${PAPERSEARCH_SELECTOR_MODEL_NAME:-select
 
 PROJECT_NAME=${PROJECT_NAME:-FALCON}
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-EXP_NAME="${EXP_NAME:-papersearch_ppo_${RUN_TIMESTAMP}}"
+EXP_NAME="${EXP_NAME:-papersearch_ppo}"
 VAL_DUMP_DIR="${PAPERSEARCH_VAL_DUMP_DIR:-$PROJECT_DIR/outputs/papersearch_validation/$EXP_NAME}"
 ROLLOUT_DUMP_DIR="${PAPERSEARCH_ROLLOUT_DUMP_DIR:-$PROJECT_DIR/outputs/papersearch_rollout/$EXP_NAME}"
 
@@ -87,13 +87,14 @@ python3 -m arft.main_agent_ppo \
     trainer.logger='["console","swanlab","mlflow"]' \
     trainer.project_name="$PROJECT_NAME" \
     trainer.experiment_name="$EXP_NAME" \
+    trainer.resume_mode=auto \
     trainer.validation_data_dir="$VAL_DUMP_DIR" \
     trainer.rollout_data_dir="$ROLLOUT_DUMP_DIR" \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.val_before_train=True \
-    trainer.save_freq=50 \
+    trainer.save_freq=10 \
     trainer.test_freq=5 \
-    trainer.max_actor_ckpt_to_keep=3 \
-    trainer.max_critic_ckpt_to_keep=3 \
+    trainer.max_actor_ckpt_to_keep=2 \
+    trainer.max_critic_ckpt_to_keep=2 \
     trainer.total_epochs=5 "$@"

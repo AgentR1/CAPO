@@ -18,6 +18,7 @@ data/webshop_full/
 data/webshop_debug/
 data/webshop_new_env/
 debug/
+guard/
 mlruns/
 mlartifacts/
 h100/

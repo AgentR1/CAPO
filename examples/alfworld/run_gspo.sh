@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-export EXP_NAME="${EXP_NAME:-alfworld_gspo_${RUN_TIMESTAMP}}"
+export EXP_NAME="${EXP_NAME:-alfworld_gspo}"
 export ALFWORLD_VAL_DUMP_DIR="${ALFWORLD_VAL_DUMP_DIR:-$ROOT_DIR/outputs/alfworld_validation/$EXP_NAME}"
 
 exec bash "$SCRIPT_DIR/run_grpo.sh" \

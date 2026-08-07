@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RUN_TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
-export EXP_NAME="${EXP_NAME:-webshop_steppo_${RUN_TIMESTAMP}}"
+export EXP_NAME="${EXP_NAME:-webshop_steppo}"
 export WEBSHOP_VAL_DUMP_DIR="${WEBSHOP_VAL_DUMP_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)/outputs/webshop_validation/$EXP_NAME}"
 
 exec bash "$SCRIPT_DIR/run_ppo.sh" \
