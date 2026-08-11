@@ -41,4 +41,6 @@ reference/
 visual/
 outputs/
 /qdrant_url
+/qdrant_url.py
+/scripts/
 test/
