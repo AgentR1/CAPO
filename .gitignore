@@ -37,3 +37,8 @@ data/corpus/hotpotqa/raw_*/
 docs/
 .ms_upload_cache
 reference/
+.DS_Store
+visual/
+outputs/
+/qdrant_url
+test/
