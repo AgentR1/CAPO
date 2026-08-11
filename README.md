@@ -37,6 +37,10 @@ These two pieces solve different parts of the problem. Credit assignment determi
 
 The paper evaluates CAPO on multi-hop question answering, academic paper search, and text-based action tasks. Across HotpotQA, RealResearchQuery, ALFWorld, and WebShop, CAPO outperforms the compared reinforcement learning baselines under the reported evaluation protocols.
 
+![Main results across question answering, paper search, and text-world tasks](assets/capo-main-results.png)
+
+*Table 1 from the CAPO paper. Main results across multi-hop QA, academic paper search, ALFWorld, and WebShop.*
+
 The ablations show that both action-level credit assignment and action-aware policy updates contribute: removing either weakens performance, and removing both is particularly harmful.
 
 ![CAPO ablations across four benchmarks](assets/capo-ablation.png)
